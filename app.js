@@ -4,9 +4,13 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const mongoose = require("mongoose");
 const multer = require("multer");
+// I import express-graphql to expose graphql schema and resolvers
+const { graphqlHTTP } = require("express-graphql");
 
-const feedRoutes = require("./routes/feed");
-const authRoutes = require("./routes/auth");
+const graphqlSchema = require("./graphql/schema");
+const graphqlResolver = require("./graphql/resolvers");
+const auth = require("./middleware/auth");
+
 
 const app = express();
 
@@ -56,16 +60,40 @@ app.use((req, res, next) => {
     "GET, POST, PUT, PATCH, DELETE"
   );
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  // BROWSER SEND 'OPTION' REQ FIRST BEFORE ANY VERBS, BUT EXPRESS-GRAPHQL REFUSES IT
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
   next();
 });
 
-// I only forward incoming requests which start with '/feed'
-app.use("/feed", feedRoutes);
-app.use("/auth", authRoutes);
+// Middleware to extract/check token id for every request that reach my graphql endpoint, but will not deny the request if there is no token
+app.use(auth);
+
+// Graphql middleware only entrypoint, deliberatly not limited to 'app.post()' to be able to use graphiql tool
+app.use(
+  "/graphql",
+  graphqlHTTP({
+    schema: graphqlSchema,
+    rootValue: graphqlResolver,
+    graphiql: true,
+    // graphql method which receive error to overight error format
+    formatError(err) {
+      // return err; // means no change into the format
+      if (!err.originalError) {
+        return err;
+      }
+      const data = err.originalError.data;
+      const message = err.message || "An error occurred.";
+      const code = err.originalError.code || 500;
+      return { message: message, status: code, data: data };
+    },
+  })
+);
 
 // Error handling middleware : this middleware should never be reached, as the latest, exept if an error object is created!
 app.use((error, req, res, next) => {
-  console.log("error:", error);
+  console.log("ERROR FROM APP.JS:", error);
   const status = error.statusCode || 500;
   const message = error.message;
   const data = error.data;
@@ -79,12 +107,6 @@ mongoose
     { useNewUrlParser: true, useUnifiedTopology: true }
   )
   .then((result) => {
-    const server = app.listen(8080);
-    // exposes socket.io function which builds up on http, thus take http server as argument
-    const io = require("./socket").init(server);
-    // waiting socket connection/port
-    io.on("connection", (socket) => {
-      console.log("socket.io client connected");
-    });
+    app.listen(8080);
   })
   .catch((err) => console.log(err));
