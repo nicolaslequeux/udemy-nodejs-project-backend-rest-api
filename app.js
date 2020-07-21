@@ -1,5 +1,4 @@
 const path = require("path");
-const fs = require("fs");
 
 const express = require("express");
 const bodyParser = require("body-parser");
@@ -11,6 +10,7 @@ const { graphqlHTTP } = require("express-graphql");
 const graphqlSchema = require("./graphql/schema");
 const graphqlResolver = require("./graphql/resolvers");
 const auth = require("./middleware/auth");
+const { clearImage } = require("./util/file");
 
 const app = express();
 
@@ -74,7 +74,7 @@ app.use(auth);
 app.put("/post-image", (req, res, next) => {
   // I protect my route from unauthenticated people
   if (!req.isAuth) {
-    throw new Error('Not authenticated!');
+    throw new Error("Not authenticated!");
   }
   // Is-there a file attached to the request?
   if (!req.file) {
@@ -128,10 +128,3 @@ mongoose
     app.listen(8080);
   })
   .catch((err) => console.log(err));
-
-// helper to delete
-const clearImage = (filePath) => {
-  filePath = path.join(__dirname, "..", filePath);
-  // 'unlink' function from 'fs' module delete a file
-  fs.unlink(filePath, (err) => console.log(err));
-};
