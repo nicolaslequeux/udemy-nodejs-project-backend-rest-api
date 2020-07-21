@@ -2,11 +2,13 @@ const bcrypt = require("bcryptjs");
 const validator = require("validator");
 const jwt = require("jsonwebtoken");
 
+// Import mongoose models
 const User = require("../models/user");
 const Post = require("../models/post");
 
 // Resolver in an exported object where we define methods for every query/mutation defined in th schema
 module.exports = {
+
   createUser: async function ({ userInput }, req) {
     //   const email = args.userInput.email;
     // WAY #1 TO MANAGE VALIDATIONS FROM RESOLVER
@@ -78,7 +80,7 @@ module.exports = {
       throw error;
     }
 
-    // VALIDATION
+    // VALIDATION - Use an empty errors array
     const errors = [];
     if (
       validator.isEmpty(postInput.title) ||
@@ -116,6 +118,7 @@ module.exports = {
       creator: user,
     });
 
+    // UPDATE DB
     const createdPost = await post.save();
     user.posts.push(createdPost);
     await user.save();
@@ -123,9 +126,69 @@ module.exports = {
     // RETURN POST DATA
     return {
       ...createdPost._doc,
+      // I cannot return a mongoDB objectId, thus converting to string
       _id: createdPost._id.toString(),
+      // graphql doesn't understand date type, thus this string convertion
       createdAt: createdPost.createdAt.toISOString(),
       updatedAt: createdPost.updatedAt.toISOString(),
     };
   },
+
+  posts: async function ({ page }, req) {
+    // TOCKEN CHECK (MANAGED BY HELPER AUTH.JS)
+    if (!req.isAuth) {
+      const error = new Error("Not authenticated");
+      error.code = 401;
+      throw error;
+    }
+
+    if (!page) {
+      page = 1;
+    }
+
+    const perPage = 2;
+    const totalPosts = await Post.find().countDocuments();
+    const posts = await Post.find()
+      .populate("creator")
+      .skip((page - 1) * perPage)
+      .limit(perPage)
+      .sort({ createdAt: -1 });
+
+    return {
+      // I return the expected object defined into the graphql schema
+      posts: posts.map((post) => {
+        return {
+          ...post._doc,
+          // I need to transform/overide some fields of the mongodb post for graphql (.map)
+          _id: post._id.toString(),
+          createdAt: post.createdAt.toISOString(),
+          updatedAt: post.updatedAt.toISOString(),
+        };
+      }),
+      totalPosts: totalPosts,
+    };
+  },
+
+  post: async function ({ id }, req) {
+    // Is user authenticated?
+    if (!req.isAuth) {
+      const error = new Error("Not authenticated");
+      error.code = 401;
+      throw error;
+    }
+    const post = await Post.findById(id).populate("creator");
+    if (!post) {
+      const error = new Error("No post found!");
+      error.code = 404;
+      throw error;
+    }
+    return {
+      ...post._doc,
+      // I need to transform/overide some fields of the mongodb post for graphql (.map)
+      _id: post._id.toString(),
+      createdAt: post.createdAt.toISOString(),
+      updatedAt: post.updatedAt.toISOString(),
+    };
+  },
+
 };

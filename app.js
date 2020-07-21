@@ -1,4 +1,5 @@
 const path = require("path");
+const fs = require("fs");
 
 const express = require("express");
 const bodyParser = require("body-parser");
@@ -10,7 +11,6 @@ const { graphqlHTTP } = require("express-graphql");
 const graphqlSchema = require("./graphql/schema");
 const graphqlResolver = require("./graphql/resolvers");
 const auth = require("./middleware/auth");
-
 
 const app = express();
 
@@ -70,6 +70,24 @@ app.use((req, res, next) => {
 // Middleware to extract/check token id for every request that reach my graphql endpoint, but will not deny the request if there is no token
 app.use(auth);
 
+// Route API for image managing (could be outsourced in another file, but only route for images!)
+app.put("/post-image", (req, res, next) => {
+  // I protect my route from unauthenticated people
+  if (!req.isAuth) {
+    throw new Error('Not authenticated!');
+  }
+  // Is-there a file attached to the request?
+  if (!req.file) {
+    return res.status(200).json({ message: "No file provided" });
+  }
+  if (req.body.oldPath) {
+    clearImage(req.body.oldPath);
+  }
+  return res
+    .status(201)
+    .json({ message: "File stored", filePath: req.file.path });
+});
+
 // Graphql middleware only entrypoint, deliberatly not limited to 'app.post()' to be able to use graphiql tool
 app.use(
   "/graphql",
@@ -78,7 +96,7 @@ app.use(
     rootValue: graphqlResolver,
     graphiql: true,
     // graphql method which receive error to overight error format
-    formatError(err) {
+    customFormatErrorFn(err) {
       // return err; // means no change into the format
       if (!err.originalError) {
         return err;
@@ -110,3 +128,10 @@ mongoose
     app.listen(8080);
   })
   .catch((err) => console.log(err));
+
+// helper to delete
+const clearImage = (filePath) => {
+  filePath = path.join(__dirname, "..", filePath);
+  // 'unlink' function from 'fs' module delete a file
+  fs.unlink(filePath, (err) => console.log(err));
+};
